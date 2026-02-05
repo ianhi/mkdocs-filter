@@ -196,9 +196,12 @@ class StreamingProcessor:
         """Handle the start of a rebuild (file change detected)."""
         # Display any pending issues from previous build
         self._process_buffer()
-        # Show rebuild indicator
+        # Show rebuild indicator - make it prominent to separate old/new errors
         self.console.print()
-        self.console.print("[dim]─── File change detected, rebuilding... ───[/dim]")
+        self.console.print()
+        self.console.print("[cyan]" + "═" * 60 + "[/cyan]")
+        self.console.print("[cyan bold]🔄 File change detected — rebuilding...[/cyan bold]")
+        self.console.print("[cyan]" + "═" * 60 + "[/cyan]")
         self.console.print()
         # Preserve server URL across rebuilds (it doesn't change during mkdocs serve)
         preserved_server_url = self.build_info.server_url
