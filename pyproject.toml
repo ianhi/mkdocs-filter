@@ -28,6 +28,7 @@ dependencies = [
 
 [project.scripts]
 mkdocs-output-filter = "mkdocs_filter:main"
+mkdocs-output-filter-mcp = "mkdocs_filter.mcp_server:main"
 
 [project.urls]
 Homepage = "https://github.com/ian/mkdocs-output-filter"

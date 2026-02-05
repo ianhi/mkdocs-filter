@@ -425,6 +425,83 @@ class MkdocsFilterServer:
             )
 
 
+def run_mcp_server(
+    project_dir: str | None = None,
+    pipe_mode: bool = False,
+    watch_mode: bool = False,
+    initial_build: bool = False,
+) -> int:
+    """Run the MCP server with the given configuration.
+
+    This function can be called from the main CLI when --mcp is used.
+
+    Args:
+        project_dir: Path to mkdocs project directory
+        pipe_mode: Read mkdocs output from stdin
+        watch_mode: Watch state file for updates
+        initial_build: Run initial mkdocs build on startup
+
+    Returns:
+        Exit code (0 for success, non-zero for error)
+    """
+    import asyncio
+
+    # Validate arguments
+    mode_count = sum([bool(project_dir and not watch_mode), pipe_mode, watch_mode])
+    if mode_count == 0:
+        print(
+            "Error: Specify one of --watch, --project-dir, or --pipe",
+            file=sys.stderr,
+        )
+        return 1
+
+    if mode_count > 1 and not (watch_mode and project_dir):
+        print(
+            "Error: Cannot combine --pipe with other modes",
+            file=sys.stderr,
+        )
+        return 1
+
+    # Validate project directory if specified
+    project_path = None
+    if project_dir:
+        project_path = Path(project_dir)
+        if not project_path.exists():
+            print(f"Error: Project directory does not exist: {project_dir}", file=sys.stderr)
+            return 1
+        if not (project_path / "mkdocs.yml").exists():
+            print(f"Error: No mkdocs.yml found in {project_dir}", file=sys.stderr)
+            return 1
+
+    # Create server
+    server = MkdocsFilterServer(
+        project_dir=project_path,
+        pipe_mode=pipe_mode,
+        watch_mode=watch_mode,
+    )
+
+    # Handle pipe mode - read initial input
+    if pipe_mode:
+        lines = []
+        for line in sys.stdin:
+            lines.append(line.rstrip())
+        server._parse_output("\n".join(lines))
+
+    # Handle watch mode - do initial read of state file
+    elif watch_mode:
+        server._refresh_from_state_file()
+
+    # Handle initial build for subprocess mode
+    elif initial_build and project_path:
+        lines, _ = server._run_mkdocs_build()
+        server._parse_output("\n".join(lines))
+
+    # Run the server
+    asyncio.run(server.run())
+
+    return 0
+
+
 def main() -> int:
     """Main entry point for the MCP server CLI."""
     parser = argparse.ArgumentParser(

@@ -913,14 +913,6 @@ def main() -> int:
     """Main entry point for the CLI."""
     import argparse
 
-    # Check if the first argument is 'mcp' to dispatch to MCP server
-    if len(sys.argv) > 1 and sys.argv[1] == "mcp":
-        # Remove 'mcp' from argv and run MCP server main
-        sys.argv = [sys.argv[0]] + sys.argv[2:]
-        from mkdocs_filter.mcp_server import main as mcp_main
-
-        return mcp_main()
-
     parser = argparse.ArgumentParser(
         description="Filter mkdocs output to show only warnings and errors",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -928,12 +920,12 @@ def main() -> int:
 Examples:
     mkdocs build --verbose 2>&1 | mkdocs-output-filter
     mkdocs build --verbose 2>&1 | mkdocs-output-filter -v
-    mkdocs serve 2>&1 | mkdocs-output-filter
+    mkdocs serve 2>&1 | mkdocs-output-filter --share-state
     mkdocs build 2>&1 | mkdocs-output-filter --errors-only
 
     # MCP server mode (for code agents)
-    mkdocs-output-filter mcp --project-dir /path/to/project
-    mkdocs build 2>&1 | mkdocs-output-filter mcp --pipe
+    mkdocs-output-filter --mcp --watch
+    mkdocs-output-filter --mcp --project-dir /path/to/project
 
 Note: Use --verbose with mkdocs to get file paths for code block errors.
         """,
@@ -974,7 +966,37 @@ Note: Use --verbose with mkdocs to get file paths for code block errors.
         help="Write state to .mkdocs-output-filter/state.json for MCP server access",
     )
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
+    parser.add_argument(
+        "--mcp",
+        action="store_true",
+        help="Run as MCP server for code agent integration (use with --project-dir or --watch)",
+    )
+    parser.add_argument(
+        "--project-dir",
+        type=str,
+        help="Project directory for MCP server mode (requires --mcp)",
+    )
+    parser.add_argument(
+        "--watch",
+        action="store_true",
+        help="MCP watch mode: read state from .mkdocs-output-filter/state.json (requires --mcp)",
+    )
+    parser.add_argument(
+        "--pipe",
+        action="store_true",
+        help="MCP pipe mode: read mkdocs output from stdin (requires --mcp)",
+    )
     args = parser.parse_args()
+
+    # MCP server mode - delegate to mcp_server module
+    if args.mcp:
+        from mkdocs_filter.mcp_server import run_mcp_server
+
+        return run_mcp_server(
+            project_dir=args.project_dir,
+            pipe_mode=args.pipe,
+            watch_mode=args.watch,
+        )
 
     try:
         # Raw mode - just pass through everything
