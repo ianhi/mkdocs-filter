@@ -1,4 +1,4 @@
-site_name: mkdocs-filter
+site_name: mkdocs-output-filter
 site_description: Filter mkdocs build output to show only warnings and errors
 site_url: https://ianhi.github.io/mkdocs-filter
 

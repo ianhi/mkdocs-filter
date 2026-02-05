@@ -1,4 +1,4 @@
-# mkdocs-filter
+# mkdocs-output-filter
 
 **Filter mkdocs output to show only what matters: warnings and errors.**
 
