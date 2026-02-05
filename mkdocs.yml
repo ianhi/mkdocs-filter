@@ -1,9 +1,9 @@
 site_name: mkdocs-output-filter
 site_description: Filter mkdocs build output to show only warnings and errors
-site_url: https://ianhi.github.io/mkdocs-filter
+site_url: https://ianhi.github.io/mkdocs-output-filter
 
-repo_name: ianhi/mkdocs-filter
-repo_url: https://github.com/ianhi/mkdocs-filter
+repo_name: ianhi/mkdocs-output-filter
+repo_url: https://github.com/ianhi/mkdocs-output-filter
 
 theme:
   name: material
