@@ -1,21 +1,51 @@
-/* Side-by-side comparison grid */
-.grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
+/* Side-by-side comparison */
+.comparison {
+  display: flex;
   gap: 1rem;
+  margin: 1.5rem 0;
 }
 
-@media (max-width: 768px) {
-  .grid {
-    grid-template-columns: 1fr;
+.comparison-item {
+  flex: 1;
+  min-width: 0;
+}
+
+.comparison-item pre {
+  margin-top: 0;
+  font-size: 0.75rem;
+  line-height: 1.4;
+}
+
+.comparison-header {
+  font-weight: bold;
+  padding: 0.5rem 1rem;
+  border-radius: 0.25rem 0.25rem 0 0;
+  margin-bottom: -0.5rem;
+}
+
+.comparison-header.bad {
+  background: #ffebee;
+  color: #c62828;
+}
+
+.comparison-header.good {
+  background: #e8f5e9;
+  color: #2e7d32;
+}
+
+[data-md-color-scheme="slate"] .comparison-header.bad {
+  background: #4a1c1c;
+  color: #ef9a9a;
+}
+
+[data-md-color-scheme="slate"] .comparison-header.good {
+  background: #1b3d1b;
+  color: #a5d6a7;
+}
+
+/* Stack on mobile */
+@media (max-width: 960px) {
+  .comparison {
+    flex-direction: column;
   }
-}
-
-/* Red X and green checkmark icons */
-.red {
-  color: #f44336;
-}
-
-.green {
-  color: #4caf50;
 }

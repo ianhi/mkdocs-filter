@@ -4,16 +4,17 @@
 
 ## Before & After
 
-<div class="grid" markdown>
-
-**Raw mkdocs output** :material-close:{ .red }
+<div class="comparison">
+<div class="comparison-item">
+<div class="comparison-header bad">Raw mkdocs output ✗</div>
 
 ```
 INFO    -  Cleaning site directory
 INFO    -  Building documentation to directory: /path/to/site
-INFO    -  Doc file 'page1.md' contains a link...
-WARNING -  markdown_exec: Execution of python
-code block exited with errors
+INFO    -  Doc file 'page1.md' contains a link 'image.png'...
+INFO    -  Doc file 'page2.md' contains a link 'other.md'...
+WARNING -  markdown_exec: Execution of python code block
+           exited with errors
 
 Code block is:
 
@@ -24,16 +25,20 @@ Code block is:
 Output is:
 
   Traceback (most recent call last):
-    File "<code block>", line 3, in <module>
+    File "<code block: session test; n1>", line 3, in <module>
       raise ValueError("test error")
   ValueError: test error
 
 INFO    -  Documentation built in 1.23 seconds
 ```
 
-**Filtered output** :material-check:{ .green }
+</div>
+<div class="comparison-item">
+<div class="comparison-header good">Filtered output ✓</div>
 
 ```
+Built in 1.23s
+
 ⚠ WARNING [markdown_exec] ValueError: test error
    📍 session 'test' → line 3
 
@@ -42,13 +47,19 @@ INFO    -  Documentation built in 1.23 seconds
 │   2 y = 2                          │
 │   3 raise ValueError("test error") │
 ╰────────────────────────────────────╯
+╭────── Error Output ──────╮
+│ ValueError: test error   │
+╰── use -v for full trace ─╯
 
 ────────────────────────────────────
 Summary: 1 warning(s)
 
 Built in 1.23s
+
+Hint: -v for verbose output, --raw for full mkdocs output
 ```
 
+</div>
 </div>
 
 ## Install
