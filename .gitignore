@@ -28,6 +28,9 @@ htmlcov/
 tests/fixtures/*/.site/
 tests/fixtures/*/site/
 
+# mkdocs build output
+site/
+
 # OS
 .DS_Store
 Thumbs.db

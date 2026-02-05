@@ -86,7 +86,7 @@ Hint: -v for verbose output, --raw for full mkdocs output
 
 ```bash
 # Clone the repo
-git clone https://github.com/yourusername/mkdocs-filter
+git clone https://github.com/ianhi/mkdocs-filter
 cd mkdocs-filter
 
 # Install dev dependencies

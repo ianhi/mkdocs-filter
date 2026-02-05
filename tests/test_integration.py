@@ -152,3 +152,116 @@ class TestFilterOptions:
         # Raw output should contain INFO lines
         assert "INFO" in filtered_output
         assert "Cleaning site directory" in filtered_output
+
+
+class TestMkdocsServeRebuild:
+    """Tests for mkdocs serve rebuild detection.
+
+    CRITICAL: These tests verify that errors introduced AFTER the initial build
+    are properly detected and displayed when using mkdocs serve.
+
+    NOTE: Requires --livereload flag due to Click 8.3.x bug:
+    https://github.com/mkdocs/mkdocs/issues/4032
+    """
+
+    def test_detects_rebuild_error_with_real_mkdocs_serve(
+        self, markdown_exec_error_dir: Path
+    ) -> None:
+        """CRITICAL: Detects errors from rebuilds triggered by file changes.
+
+        This test:
+        1. Starts mkdocs serve with --livereload
+        2. Waits for initial build to complete
+        3. Modifies a file to trigger rebuild
+        4. Verifies BOTH initial and rebuild errors appear in filtered output
+        """
+        import fcntl
+        import os
+        import subprocess
+        import sys
+        import time
+
+        docs_file = markdown_exec_error_dir / "docs" / "index.md"
+        original_content = docs_file.read_text()
+
+        try:
+            # Start mkdocs serve with livereload (required due to Click 8.3.x bug)
+            # See: https://github.com/mkdocs/mkdocs/issues/4032
+            mkdocs_proc = subprocess.Popen(
+                [
+                    sys.executable,
+                    "-m",
+                    "mkdocs",
+                    "serve",
+                    "--livereload",  # Required for file watching with Click 8.3.x
+                    "--dev-addr",
+                    "127.0.0.1:8299",
+                ],
+                cwd=markdown_exec_error_dir,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+            )
+
+            # Start filter reading from mkdocs
+            filter_proc = subprocess.Popen(
+                [sys.executable, "-m", "mkdocs_filter", "--streaming", "--no-color"],
+                stdin=mkdocs_proc.stdout,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+
+            # Make filter stdout non-blocking
+            assert filter_proc.stdout is not None
+            fd = filter_proc.stdout.fileno()
+            fl = fcntl.fcntl(fd, fcntl.F_GETFL)
+            fcntl.fcntl(fd, fcntl.F_SETFL, fl | os.O_NONBLOCK)
+
+            def read_output() -> str:
+                output = ""
+                try:
+                    while True:
+                        chunk = filter_proc.stdout.read(4096)
+                        if not chunk:
+                            break
+                        output += chunk
+                except (BlockingIOError, TypeError):
+                    pass
+                return output
+
+            # Wait for initial build
+            time.sleep(4)
+            initial_output = read_output()
+
+            # Verify initial error is shown
+            assert (
+                "ValueError" in initial_output or "INTENTIONAL TEST ERROR" in initial_output
+            ), f"Initial build error not shown. Output:\n{initial_output}"
+
+            # Modify file to trigger rebuild (change ValueError to RuntimeError)
+            new_content = original_content.replace("ValueError", "RuntimeError")
+            docs_file.write_text(new_content)
+
+            # Wait for rebuild (needs more time for build to complete)
+            time.sleep(6)
+            rebuild_output = read_output()
+
+            # Verify rebuild error is shown (RuntimeError)
+            full_output = initial_output + rebuild_output
+            assert (
+                "RuntimeError" in full_output
+            ), f"Rebuild error not detected. Full output:\n{full_output}"
+
+            # Verify file change was detected
+            assert (
+                "rebuild" in full_output.lower() or "file change" in full_output.lower()
+            ), f"File change indicator not shown. Full output:\n{full_output}"
+
+        finally:
+            # Cleanup
+            mkdocs_proc.terminate()
+            filter_proc.terminate()
+            mkdocs_proc.wait(timeout=5)
+            filter_proc.wait(timeout=5)
+            docs_file.write_text(original_content)

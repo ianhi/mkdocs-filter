@@ -1,0 +1,436 @@
+"""MCP Server for mkdocs-output-filter.
+
+Provides tools for code agents to get mkdocs issues and collaborate on fixes.
+
+Usage:
+    # Subprocess mode (recommended): Server manages mkdocs internally
+    mkdocs-output-filter mcp --project-dir /path/to/project
+
+    # Pipe mode: Receive mkdocs output via stdin
+    mkdocs build 2>&1 | mkdocs-output-filter mcp --pipe
+"""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import subprocess
+import sys
+from pathlib import Path
+from typing import Any
+
+from mcp.server import Server
+from mcp.server.stdio import stdio_server
+from mcp.types import TextContent, Tool
+
+from mkdocs_filter.parsing import (
+    BuildInfo,
+    Issue,
+    Level,
+    extract_build_info,
+    parse_mkdocs_output,
+)
+
+
+class MkdocsFilterServer:
+    """MCP server for mkdocs-filter.
+
+    Provides tools for code agents to interact with mkdocs build issues.
+    """
+
+    def __init__(
+        self,
+        project_dir: Path | None = None,
+        pipe_mode: bool = False,
+    ):
+        """Initialize the server.
+
+        Args:
+            project_dir: Path to mkdocs project directory (for subprocess mode)
+            pipe_mode: If True, expect mkdocs output from stdin
+        """
+        self.project_dir = project_dir
+        self.pipe_mode = pipe_mode
+        self.issues: list[Issue] = []
+        self.build_info = BuildInfo()
+        self.raw_output: list[str] = []
+        self._issue_ids: dict[str, str] = {}  # Cache for stable issue IDs
+
+        # Create MCP server
+        self._server = Server("mkdocs-filter")
+        self._setup_tools()
+
+    def _setup_tools(self) -> None:
+        """Set up MCP tool handlers."""
+
+        @self._server.list_tools()
+        async def list_tools() -> list[Tool]:
+            return self._list_tools()
+
+        @self._server.call_tool()
+        async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
+            return self._call_tool(name, arguments)
+
+    def _list_tools(self) -> list[Tool]:
+        """List available tools."""
+        return [
+            Tool(
+                name="get_issues",
+                description="Get current warnings and errors from the last mkdocs build",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "filter": {
+                            "type": "string",
+                            "enum": ["all", "errors", "warnings"],
+                            "default": "all",
+                            "description": "Filter issues by type",
+                        },
+                        "verbose": {
+                            "type": "boolean",
+                            "default": False,
+                            "description": "Include full code blocks and tracebacks",
+                        },
+                    },
+                },
+            ),
+            Tool(
+                name="get_issue_details",
+                description="Get detailed information about a specific issue by ID",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "issue_id": {
+                            "type": "string",
+                            "description": "The issue ID to get details for",
+                        },
+                    },
+                    "required": ["issue_id"],
+                },
+            ),
+            Tool(
+                name="rebuild",
+                description="Trigger a new mkdocs build and return updated issues",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "verbose": {
+                            "type": "boolean",
+                            "default": False,
+                            "description": "Run mkdocs with --verbose for more file context",
+                        },
+                    },
+                },
+            ),
+            Tool(
+                name="get_build_info",
+                description="Get information about the last build (server URL, build dir, time)",
+                inputSchema={
+                    "type": "object",
+                    "properties": {},
+                },
+            ),
+            Tool(
+                name="get_raw_output",
+                description="Get the raw mkdocs output from the last build",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "last_n_lines": {
+                            "type": "integer",
+                            "default": 100,
+                            "description": "Number of lines to return (from the end)",
+                        },
+                    },
+                },
+            ),
+        ]
+
+    def _call_tool(self, name: str, arguments: dict[str, Any]) -> list[TextContent]:
+        """Handle tool calls."""
+        if name == "get_issues":
+            return self._handle_get_issues(arguments)
+        elif name == "get_issue_details":
+            return self._handle_get_issue_details(arguments)
+        elif name == "rebuild":
+            return self._handle_rebuild(arguments)
+        elif name == "get_build_info":
+            return self._handle_get_build_info()
+        elif name == "get_raw_output":
+            return self._handle_get_raw_output(arguments)
+        return [TextContent(type="text", text=f"Unknown tool: {name}")]
+
+    def _handle_get_issues(self, arguments: dict[str, Any]) -> list[TextContent]:
+        """Handle get_issues tool call."""
+        filter_type = arguments.get("filter", "all")
+        verbose = arguments.get("verbose", False)
+
+        issues = self.issues
+
+        # Filter issues
+        if filter_type == "errors":
+            issues = [i for i in issues if i.level == Level.ERROR]
+        elif filter_type == "warnings":
+            issues = [i for i in issues if i.level == Level.WARNING]
+
+        # Convert to dicts
+        issue_dicts = [self._issue_to_dict(i, verbose=verbose) for i in issues]
+
+        # Build response
+        error_count = sum(1 for i in issues if i.level == Level.ERROR)
+        warning_count = sum(1 for i in issues if i.level == Level.WARNING)
+
+        response = {
+            "total": len(issue_dicts),
+            "errors": error_count,
+            "warnings": warning_count,
+            "issues": issue_dicts,
+        }
+
+        return [TextContent(type="text", text=json.dumps(response, indent=2))]
+
+    def _handle_get_issue_details(self, arguments: dict[str, Any]) -> list[TextContent]:
+        """Handle get_issue_details tool call."""
+        issue_id = arguments.get("issue_id", "")
+
+        # Find issue by ID
+        for issue in self.issues:
+            if self._get_issue_id(issue) == issue_id:
+                issue_dict = self._issue_to_dict(issue, verbose=True)
+                return [TextContent(type="text", text=json.dumps(issue_dict, indent=2))]
+
+        return [TextContent(type="text", text=f"Issue not found: {issue_id}")]
+
+    def _handle_rebuild(self, arguments: dict[str, Any]) -> list[TextContent]:
+        """Handle rebuild tool call."""
+        if self.pipe_mode:
+            return [
+                TextContent(
+                    type="text",
+                    text="Error: Cannot rebuild in pipe mode. Run mkdocs manually and pipe output.",
+                )
+            ]
+
+        if not self.project_dir:
+            return [TextContent(type="text", text="Error: No project directory configured")]
+
+        verbose = arguments.get("verbose", False)
+
+        # Run mkdocs build
+        lines, return_code = self._run_mkdocs_build(verbose=verbose)
+
+        # Process output
+        self._parse_output("\n".join(lines))
+
+        # Build response
+        error_count = sum(1 for i in self.issues if i.level == Level.ERROR)
+        warning_count = sum(1 for i in self.issues if i.level == Level.WARNING)
+
+        response = {
+            "success": return_code == 0 or (return_code == 1 and error_count == 0),
+            "return_code": return_code,
+            "total_issues": len(self.issues),
+            "errors": error_count,
+            "warnings": warning_count,
+            "build_time": self.build_info.build_time,
+            "issues": [self._issue_to_dict(i) for i in self.issues],
+        }
+
+        return [TextContent(type="text", text=json.dumps(response, indent=2))]
+
+    def _handle_get_build_info(self) -> list[TextContent]:
+        """Handle get_build_info tool call."""
+        return [TextContent(type="text", text=self._get_build_info_json())]
+
+    def _handle_get_raw_output(self, arguments: dict[str, Any]) -> list[TextContent]:
+        """Handle get_raw_output tool call."""
+        last_n = arguments.get("last_n_lines", 100)
+        lines = self.raw_output[-last_n:] if last_n > 0 else self.raw_output
+        return [TextContent(type="text", text="\n".join(lines))]
+
+    def _parse_output(self, output: str) -> None:
+        """Parse mkdocs output and extract issues and build info."""
+        lines = output.splitlines()
+        self.raw_output = lines
+
+        # Parse issues
+        all_issues = parse_mkdocs_output(lines)
+
+        # Deduplicate issues
+        seen: set[tuple[Level, str]] = set()
+        unique_issues: list[Issue] = []
+        for issue in all_issues:
+            key = (issue.level, issue.message[:100])
+            if key not in seen:
+                seen.add(key)
+                unique_issues.append(issue)
+
+        self.issues = unique_issues
+
+        # Extract build info
+        self.build_info = extract_build_info(lines)
+
+    def _run_mkdocs_build(self, verbose: bool = False) -> tuple[list[str], int]:
+        """Run mkdocs build and capture output."""
+        if not self.project_dir:
+            return [], 1
+
+        cmd = ["mkdocs", "build", "--clean"]
+        if verbose:
+            cmd.append("--verbose")
+
+        result = subprocess.run(
+            cmd,
+            cwd=self.project_dir,
+            capture_output=True,
+            text=True,
+        )
+
+        # Combine stdout and stderr
+        output = result.stdout + result.stderr
+        lines = output.splitlines()
+
+        return lines, result.returncode
+
+    def _get_issue_id(self, issue: Issue) -> str:
+        """Get a stable ID for an issue."""
+        # Create a hash based on issue content
+        content = f"{issue.level.value}:{issue.source}:{issue.message}"
+        if issue.file:
+            content += f":{issue.file}"
+
+        if content not in self._issue_ids:
+            # Generate a short hash
+            hash_bytes = hashlib.sha256(content.encode()).digest()
+            self._issue_ids[content] = hash_bytes[:4].hex()
+
+        return f"issue-{self._issue_ids[content]}"
+
+    def _issue_to_dict(self, issue: Issue, verbose: bool = False) -> dict[str, Any]:
+        """Convert an Issue to a JSON-serializable dict."""
+        result: dict[str, Any] = {
+            "id": self._get_issue_id(issue),
+            "level": issue.level.value,
+            "source": issue.source,
+            "message": issue.message,
+        }
+
+        if issue.file:
+            result["file"] = issue.file
+
+        if verbose:
+            if issue.code:
+                result["code"] = issue.code
+            if issue.output:
+                result["traceback"] = issue.output
+
+        return result
+
+    def _get_build_info_json(self) -> str:
+        """Get build info as JSON string."""
+        result: dict[str, Any] = {}
+        if self.build_info.server_url:
+            result["server_url"] = self.build_info.server_url
+        if self.build_info.build_dir:
+            result["build_dir"] = self.build_info.build_dir
+        if self.build_info.build_time:
+            result["build_time"] = self.build_info.build_time
+        return json.dumps(result, indent=2)
+
+    async def run(self) -> None:
+        """Run the MCP server."""
+        async with stdio_server() as (read_stream, write_stream):
+            await self._server.run(
+                read_stream, write_stream, self._server.create_initialization_options()
+            )
+
+
+def main() -> int:
+    """Main entry point for the MCP server CLI."""
+    parser = argparse.ArgumentParser(
+        description="MCP Server for mkdocs-output-filter - provides tools for code agents",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+    # Subprocess mode (recommended)
+    mkdocs-output-filter mcp --project-dir /path/to/mkdocs/project
+
+    # Pipe mode
+    mkdocs build 2>&1 | mkdocs-output-filter mcp --pipe
+
+Usage with Claude Code:
+    Add to ~/.claude.json mcpServers section:
+    {
+        "mkdocs-output-filter": {
+            "command": "mkdocs-output-filter",
+            "args": ["mcp", "--project-dir", "/path/to/project"]
+        }
+    }
+        """,
+    )
+    parser.add_argument(
+        "--project-dir",
+        type=str,
+        help="Path to mkdocs project directory (for subprocess mode)",
+    )
+    parser.add_argument(
+        "--pipe",
+        action="store_true",
+        help="Read mkdocs output from stdin (pipe mode)",
+    )
+    parser.add_argument(
+        "--initial-build",
+        action="store_true",
+        help="Run an initial mkdocs build on startup (subprocess mode only)",
+    )
+    args = parser.parse_args()
+
+    # Validate arguments
+    if not args.project_dir and not args.pipe:
+        print("Error: Either --project-dir or --pipe must be specified", file=sys.stderr)
+        return 1
+
+    if args.project_dir and args.pipe:
+        print("Error: Cannot use both --project-dir and --pipe", file=sys.stderr)
+        return 1
+
+    # Validate project directory
+    project_path = None
+    if args.project_dir:
+        project_path = Path(args.project_dir)
+        if not project_path.exists():
+            print(f"Error: Project directory does not exist: {args.project_dir}", file=sys.stderr)
+            return 1
+        if not (project_path / "mkdocs.yml").exists():
+            print(f"Error: No mkdocs.yml found in {args.project_dir}", file=sys.stderr)
+            return 1
+
+    # Create server
+    server = MkdocsFilterServer(
+        project_dir=project_path,
+        pipe_mode=args.pipe,
+    )
+
+    # Handle pipe mode - read initial input
+    if args.pipe:
+        lines = []
+        for line in sys.stdin:
+            lines.append(line.rstrip())
+        server._parse_output("\n".join(lines))
+
+    # Handle initial build
+    elif args.initial_build and project_path:
+        lines, _ = server._run_mkdocs_build()
+        server._parse_output("\n".join(lines))
+
+    # Run the server
+    import asyncio
+
+    asyncio.run(server.run())
+
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

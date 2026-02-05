@@ -1,4 +1,4 @@
-"""Pytest configuration and fixtures for mkdocs-filter tests."""
+"""Pytest configuration and fixtures for mkdocs-output-filter tests."""
 
 import subprocess
 from pathlib import Path
@@ -54,7 +54,7 @@ def run_mkdocs_build(site_dir: Path, verbose: bool = False) -> str:
 
 
 def run_mkdocs_filter(input_text: str, *args: str) -> tuple[str, int]:
-    """Run mkdocs-filter with the given input and return (output, exit_code)."""
+    """Run mkdocs-output-filter with the given input and return (output, exit_code)."""
     cmd = ["python", "-m", "mkdocs_filter", "--no-progress", "--no-color", *args]
     result = subprocess.run(
         cmd,
@@ -73,5 +73,5 @@ def run_build():
 
 @pytest.fixture
 def run_filter():
-    """Fixture that provides a function to run mkdocs-filter."""
+    """Fixture that provides a function to run mkdocs-output-filter."""
     return run_mkdocs_filter
