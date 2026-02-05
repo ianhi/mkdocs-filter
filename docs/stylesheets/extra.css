@@ -1,14 +1,19 @@
-/* Make content area wider */
+/* Make content area as wide as possible */
 .md-content {
   max-width: none;
 }
 
 .md-main__inner {
-  max-width: 1400px;
+  max-width: none;
+  margin: 0 1rem;
 }
 
-/* Hide table of contents on home page to give more room */
+/* Hide sidebars to maximize width */
 .md-sidebar--secondary {
+  display: none;
+}
+
+.md-sidebar--primary {
   display: none;
 }
 
@@ -30,8 +35,8 @@
 .comparison-item pre,
 .comparison-item .terminal {
   margin-top: 0;
-  font-size: 0.7rem;
-  line-height: 1.3;
+  font-size: 0.55rem;
+  line-height: 1.25;
   overflow: auto;
   height: 450px;
   max-height: 450px;
@@ -46,6 +51,7 @@
 .comparison-item pre code {
   background: transparent !important;
   color: #abb2bf;
+  font-size: 0.55rem;
 }
 
 .comparison-item code {
@@ -54,10 +60,11 @@
 
 .comparison-header {
   font-weight: bold;
-  padding: 0.5rem 1rem;
+  padding: 0.4rem 0.8rem;
   border-radius: 0.25rem 0.25rem 0 0;
   margin-bottom: 0;
   flex-shrink: 0;
+  font-size: 0.8rem;
 }
 
 .comparison-header.bad {
@@ -72,7 +79,7 @@
 
 /* Terminal styling */
 .terminal {
-  padding: 1rem;
+  padding: 0.75rem;
   font-family: 'SF Mono', 'Menlo', 'Monaco', 'Consolas', monospace;
   white-space: pre;
 }
