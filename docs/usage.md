@@ -29,6 +29,7 @@ mkdocs serve --livereload 2>&1 | mkdocs-output-filter
 | `--streaming` | Force streaming mode (for `mkdocs serve`) |
 | `--batch` | Force batch mode (process all input then display) |
 | `-i, --interactive` | Interactive mode with keyboard controls |
+| `--share-state` | Write issues to state file for MCP server |
 | `--version` | Show version number |
 
 ## Modes
@@ -109,3 +110,13 @@ Sometimes you need the full mkdocs output:
 ```bash
 mkdocs build 2>&1 | mkdocs-output-filter --raw
 ```
+
+### With AI Code Assistants
+
+Enable state sharing so Claude Code (or other AI assistants) can access build issues:
+
+```bash
+mkdocs serve --livereload 2>&1 | mkdocs-output-filter --share-state
+```
+
+This writes issues to `.mkdocs-output-filter/state.json` in your project, which the [MCP server](mcp-server.md) can read. See the [MCP Server docs](mcp-server.md) for setup instructions.
