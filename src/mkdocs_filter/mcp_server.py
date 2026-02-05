@@ -68,6 +68,8 @@ class MkdocsFilterServer:
         self.raw_output: list[str] = []
         self._issue_ids: dict[str, str] = {}  # Cache for stable issue IDs
         self._last_state_timestamp: float = 0
+        self._build_status: str = "complete"  # "building" or "complete"
+        self._build_started_at: float | None = None
 
         # Create MCP server
         self._server = Server("mkdocs-filter")
@@ -235,6 +237,10 @@ class MkdocsFilterServer:
         if state is None:
             return False
 
+        # Always update build status (even if timestamp hasn't changed)
+        self._build_status = state.build_status
+        self._build_started_at = state.build_started_at
+
         # Check if state has been updated since last read
         if state.timestamp <= self._last_state_timestamp:
             return False
@@ -247,10 +253,38 @@ class MkdocsFilterServer:
         self.raw_output = state.raw_output
         return True
 
+    def _get_build_in_progress_response(self) -> list[TextContent] | None:
+        """Check if a build is in progress and return a response if so.
+
+        Returns None if build is complete, otherwise returns a response telling
+        the agent to wait.
+        """
+        import time
+
+        if self._build_status != "building":
+            return None
+
+        elapsed = ""
+        if self._build_started_at:
+            seconds = int(time.time() - self._build_started_at)
+            elapsed = f" (started {seconds} seconds ago)"
+
+        response = {
+            "status": "building",
+            "message": f"Build in progress{elapsed}. Please wait and try again.",
+            "hint": "The mkdocs build is currently running. Query again in a few seconds to get the results.",
+        }
+        return [TextContent(type="text", text=json.dumps(response, indent=2))]
+
     def _handle_get_issues(self, arguments: dict[str, Any]) -> list[TextContent]:
         """Handle get_issues tool call."""
         # Refresh from state file if in watch mode
         self._refresh_from_state_file()
+
+        # Check if build is in progress
+        building_response = self._get_build_in_progress_response()
+        if building_response:
+            return building_response
 
         filter_type = arguments.get("filter", "all")
         verbose = arguments.get("verbose", False)
@@ -387,6 +421,11 @@ class MkdocsFilterServer:
         """Handle get_info tool call for INFO-level messages."""
         # Refresh from state file if in watch mode
         self._refresh_from_state_file()
+
+        # Check if build is in progress
+        building_response = self._get_build_in_progress_response()
+        if building_response:
+            return building_response
 
         category_filter = arguments.get("category", "all")
         grouped = arguments.get("grouped", True)

@@ -634,6 +634,9 @@ class StateFileData:
     raw_output: list[str] = field(default_factory=list)
     timestamp: float = field(default_factory=time.time)
     project_dir: str | None = None
+    # Build status tracking for MCP server
+    build_status: str = "complete"  # "building" or "complete"
+    build_started_at: float | None = None  # Timestamp when build started
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to JSON-serializable dict."""
@@ -644,6 +647,8 @@ class StateFileData:
             "raw_output": self.raw_output[-500:],  # Keep last 500 lines
             "timestamp": self.timestamp,
             "project_dir": self.project_dir,
+            "build_status": self.build_status,
+            "build_started_at": self.build_started_at,
         }
 
     @classmethod
@@ -656,6 +661,8 @@ class StateFileData:
             raw_output=data.get("raw_output", []),
             timestamp=data.get("timestamp", 0),
             project_dir=data.get("project_dir"),
+            build_status=data.get("build_status", "complete"),
+            build_started_at=data.get("build_started_at"),
         )
 
 

@@ -130,6 +130,11 @@ class StreamingProcessor:
         self.in_serve_mode = False  # Track if mkdocs serve is running
         self.saw_server_error = False  # Track if server crashed (OSError, etc.)
         self.error_lines: list[str] = []  # Capture error output for display
+        self.build_started_at: float | None = None  # When current build started
+
+        # Write initial "building" state if state sharing is enabled
+        if self.write_state:
+            self._write_building_state()
 
     def process_line(self, line: str) -> None:
         """Process a single line of mkdocs output."""
@@ -213,6 +218,24 @@ class StreamingProcessor:
         self.seen_issues.clear()
         self.seen_info.clear()
         self.build_info = BuildInfo(server_url=preserved_server_url)
+        # Write "building" state so MCP knows a rebuild is in progress
+        if self.write_state:
+            self._write_building_state()
+
+    def _write_building_state(self) -> None:
+        """Write 'building' status to state file so MCP knows build is in progress."""
+        import time
+
+        self.build_started_at = time.time()
+        state = StateFileData(
+            issues=[],
+            info_messages=[],
+            build_info=self.build_info,
+            raw_output=[],
+            build_status="building",
+            build_started_at=self.build_started_at,
+        )
+        write_state_file(state)
 
     def _write_state_file(self) -> None:
         """Write current state to the state file for MCP server access."""
@@ -224,6 +247,8 @@ class StreamingProcessor:
             info_messages=self.all_info_messages,
             build_info=self.build_info,
             raw_output=self.raw_buffer,
+            build_status="complete",
+            build_started_at=self.build_started_at,
         )
         write_state_file(state)
 
