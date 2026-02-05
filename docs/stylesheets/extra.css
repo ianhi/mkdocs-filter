@@ -85,12 +85,18 @@
 .terminal .cyan { color: #56b6c2; }
 .terminal .cyan-bold { color: #56b6c2; font-weight: bold; }
 .terminal .dim { color: #7f848e; }
-.terminal .keyword { color: #c678dd; }
-.terminal .string { color: #98c379; }
-.terminal .number { color: #d19a66; }
-.terminal .builtin { color: #61afef; }
-.terminal .exception { color: #e5c07b; }
-.terminal .line-num { color: #636d83; }
+
+/* Code block with Monokai-style background */
+.terminal .code-bg {
+  background: #272822;
+  display: inline;
+}
+.terminal .code-bg .keyword { color: #f92672; }
+.terminal .code-bg .string { color: #e6db74; }
+.terminal .code-bg .number { color: #ae81ff; }
+.terminal .code-bg .builtin { color: #66d9ef; }
+.terminal .code-bg .exception { color: #a6e22e; }
+.terminal .code-bg .line-num { color: #75715e; }
 
 /* Stack on mobile */
 @media (max-width: 960px) {

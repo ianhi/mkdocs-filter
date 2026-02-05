@@ -78,14 +78,14 @@ INFO    -  Documentation built in 21.54 seconds
 <span class="cyan">   📍 session </span><span class="green">'test'</span><span class="cyan"> → line </span><span class="cyan-bold">8</span>
 
 <span class="cyan">╭─────────────────── Code Block ───────────────────╮</span>
-<span class="cyan">│</span>   <span class="line-num">1</span> <span class="keyword">import</span> numpy <span class="keyword">as</span> np                           <span class="cyan">│</span>
-<span class="cyan">│</span>   <span class="line-num">2</span> <span class="keyword">from</span> mypackage <span class="keyword">import</span> process_data           <span class="cyan">│</span>
-<span class="cyan">│</span>   <span class="line-num">3</span>                                              <span class="cyan">│</span>
-<span class="cyan">│</span>   <span class="line-num">4</span> data = np.random.rand(<span class="number">100</span>, <span class="number">100</span>)              <span class="cyan">│</span>
-<span class="cyan">│</span>   <span class="line-num">5</span> result = process_data(data)                  <span class="cyan">│</span>
-<span class="cyan">│</span>   <span class="line-num">6</span> <span class="builtin">print</span>(<span class="string">f"Result shape: {result.shape}"</span>)       <span class="cyan">│</span>
-<span class="cyan">│</span>   <span class="line-num">7</span>                                              <span class="cyan">│</span>
-<span class="cyan">│</span>   <span class="line-num">8</span> <span class="keyword">raise</span> <span class="exception">ValueError</span>(<span class="string">"INTENTIONAL TEST ERROR"</span>)   <span class="cyan">│</span>
+<span class="cyan">│</span><span class="code-bg">   <span class="line-num">1</span> <span class="keyword">import</span> numpy <span class="keyword">as</span> np                          </span><span class="cyan">│</span>
+<span class="cyan">│</span><span class="code-bg">   <span class="line-num">2</span> <span class="keyword">from</span> mypackage <span class="keyword">import</span> process_data          </span><span class="cyan">│</span>
+<span class="cyan">│</span><span class="code-bg">   <span class="line-num">3</span>                                             </span><span class="cyan">│</span>
+<span class="cyan">│</span><span class="code-bg">   <span class="line-num">4</span> data = np.random.rand(<span class="number">100</span>, <span class="number">100</span>)             </span><span class="cyan">│</span>
+<span class="cyan">│</span><span class="code-bg">   <span class="line-num">5</span> result = process_data(data)                 </span><span class="cyan">│</span>
+<span class="cyan">│</span><span class="code-bg">   <span class="line-num">6</span> <span class="builtin">print</span>(<span class="string">f"Result shape: {result.shape}"</span>)      </span><span class="cyan">│</span>
+<span class="cyan">│</span><span class="code-bg">   <span class="line-num">7</span>                                             </span><span class="cyan">│</span>
+<span class="cyan">│</span><span class="code-bg">   <span class="line-num">8</span> <span class="keyword">raise</span> <span class="exception">ValueError</span>(<span class="string">"INTENTIONAL TEST ERROR"</span>)  </span><span class="cyan">│</span>
 <span class="cyan">╰──────────────────────────────────────────────────╯</span>
 <span class="red">╭────────────── Error Output ──────────────╮</span>
 <span class="red">│</span> ValueError: INTENTIONAL TEST ERROR       <span class="red">│</span>
