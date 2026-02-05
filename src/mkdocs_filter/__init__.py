@@ -124,6 +124,8 @@ class StreamingProcessor:
         self._pending_display = False
         self.saw_mkdocs_output = False  # Track if we saw valid mkdocs output
         self.in_serve_mode = False  # Track if mkdocs serve is running
+        self.saw_server_error = False  # Track if server crashed (OSError, etc.)
+        self.error_lines: list[str] = []  # Capture error output for display
 
     def process_line(self, line: str) -> None:
         """Process a single line of mkdocs output."""
@@ -141,6 +143,17 @@ class StreamingProcessor:
         # Detect serve mode
         if "Serving on http" in line:
             self.in_serve_mode = True
+
+        # Detect server errors (OSError, exceptions, tracebacks)
+        if (
+            re.match(r"^(OSError|IOError|Exception|Error|Traceback):", line)
+            or "Address already in use" in line
+            or line.strip().startswith("Traceback (most recent call last)")
+        ):
+            self.saw_server_error = True
+        # Capture error context once we're in error mode
+        if self.saw_server_error:
+            self.error_lines.append(line)
 
         # Keep buffers from growing too large
         if len(self.buffer) > self.BUFFER_MAX_SIZE:
@@ -359,9 +372,10 @@ def print_info_groups(
     console: Console,
     groups: dict[InfoCategory, list[InfoMessage]],
     verbose: bool = False,
-    max_files_shown: int = 5,
+    max_files_shown: int = 3,
+    max_targets_shown: int = 5,
 ) -> None:
-    """Print grouped INFO messages with expandable display."""
+    """Print grouped INFO messages with compact display."""
     from rich.tree import Tree
 
     if not groups:
@@ -392,22 +406,35 @@ def print_info_groups(
                     by_target[target] = []
                 by_target[target].append(msg)
 
-            for target, target_msgs in sorted(by_target.items()):
+            # Sort by count (most files first), then by name
+            sorted_targets = sorted(by_target.items(), key=lambda x: (-len(x[1]), x[0]))
+
+            # Limit targets shown unless verbose
+            targets_to_show = sorted_targets if verbose else sorted_targets[:max_targets_shown]
+            remaining_targets = len(sorted_targets) - len(targets_to_show)
+
+            for target, target_msgs in targets_to_show:
                 target_count = len(target_msgs)
                 suggestion = target_msgs[0].suggestion
-                target_label = f"[yellow]'{target}'[/yellow]"
-                if suggestion:
-                    target_label += f" [dim]→ Did you mean '{suggestion}'?[/dim]"
-                target_label += f" [dim]({target_count} files)[/dim]"
 
-                branch = tree.add(target_label)
+                # Compact format: just show target and count
+                if verbose:
+                    target_label = f"[yellow]'{target}'[/yellow]"
+                    if suggestion:
+                        target_label += f" [dim]→ '{suggestion}'[/dim]"
+                    target_label += f" [dim]({target_count})[/dim]"
+                    branch = tree.add(target_label)
+                    for msg in target_msgs:
+                        branch.add(f"[dim]{msg.file}[/dim]")
+                else:
+                    # Very compact: single line per target
+                    target_label = f"[yellow]'{target}'[/yellow] [dim]({target_count} files)[/dim]"
+                    if suggestion:
+                        target_label += f" [dim]→ '{suggestion}'[/dim]"
+                    tree.add(target_label)
 
-                # Show files (limited unless verbose)
-                files_to_show = target_msgs if verbose else target_msgs[:max_files_shown]
-                for msg in files_to_show:
-                    branch.add(f"[dim]{msg.file}[/dim]")
-                if not verbose and len(target_msgs) > max_files_shown:
-                    branch.add(f"[dim]... and {len(target_msgs) - max_files_shown} more[/dim]")
+            if remaining_targets > 0:
+                tree.add(f"[dim]... and {remaining_targets} more targets[/dim]")
         else:
             # Simple list of files
             files_to_show = messages if verbose else messages[:max_files_shown]
@@ -651,6 +678,14 @@ def run_streaming_mode(console: Console, args: argparse.Namespace) -> int:
         console.print()
         console.print("[dim]Raw output:[/dim]")
         for line in processor.raw_buffer:
+            console.print(f"  {line}")
+        return 1
+
+    # If server crashed (OSError, etc.), show the error
+    if processor.saw_server_error and processor.error_lines:
+        console.print()
+        console.print("[red bold]Server error:[/red bold]")
+        for line in processor.error_lines[-20:]:  # Show last 20 lines of error
             console.print(f"  {line}")
         return 1
 
