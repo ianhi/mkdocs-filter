@@ -111,12 +111,25 @@ class StreamingProcessor:
         self.build_info = BuildInfo()
         self.prev_line: str | None = None
         self._pending_display = False
+        self.saw_mkdocs_output = False  # Track if we saw valid mkdocs output
+        self.in_serve_mode = False  # Track if mkdocs serve is running
 
     def process_line(self, line: str) -> None:
         """Process a single line of mkdocs output."""
         line = line.rstrip()
         self.buffer.append(line)
         self.raw_buffer.append(line)
+
+        # Detect if this looks like mkdocs output
+        if not self.saw_mkdocs_output:
+            if re.match(r"^(INFO|WARNING|ERROR|DEBUG)\s+-", line) or re.match(
+                r"^\d{4}-\d{2}-\d{2}.*?(INFO|WARNING|ERROR)", line
+            ):
+                self.saw_mkdocs_output = True
+
+        # Detect serve mode
+        if "Serving on http" in line:
+            self.in_serve_mode = True
 
         # Keep buffers from growing too large
         if len(self.buffer) > self.BUFFER_MAX_SIZE:
@@ -517,6 +530,20 @@ def run_streaming_mode(console: Console, args: argparse.Namespace) -> int:
     # Print any remaining pending issues (for cases without chunk boundaries)
     if pending_issues:
         print_pending_issues()
+
+    # If we never saw valid mkdocs output, something went wrong - show raw output
+    if not processor.saw_mkdocs_output and processor.raw_buffer:
+        console.print("[red bold]Error: mkdocs did not produce expected output[/red bold]")
+        console.print()
+        console.print("[dim]Raw output:[/dim]")
+        for line in processor.raw_buffer:
+            console.print(f"  {line}")
+        return 1
+
+    # If we were in serve mode but stdin closed, warn user
+    if processor.in_serve_mode:
+        console.print()
+        console.print("[yellow]Server stopped unexpectedly.[/yellow]")
 
     # Print success message if no issues
     if not all_issues:
