@@ -15,13 +15,7 @@ For AI code assistants ([details](mcp-server.md)):
 claude mcp add --scope user --transport stdio docs-output-filter -- docs-output-filter --mcp --watch
 ```
 
-## What It Does
-
-- **Shows** WARNING and ERROR level messages with rich formatting
-- **Highlights** code execution errors (markdown_exec, myst-nb) with syntax-highlighted code blocks
-- **Extracts** file locations, line numbers, session names, and warning codes
-- **Hides** routine INFO messages (building, cleaning, copying assets)
-- **Auto-detects** MkDocs vs Sphinx from the output
+Extracts warnings, errors, and code execution failures with rich formatting. Hides routine build noise.
 
 ## Before & After
 
