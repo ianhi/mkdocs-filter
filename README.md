@@ -162,7 +162,7 @@ claude mcp add --scope user --transport stdio docs-output-filter -- docs-output-
 
 ## Documentation
 
-Full documentation: https://ianhi.github.io/docs-output-filter/
+Full documentation: https://ianhuntisaak.com/docs-output-filter/
 
 ## Development
 
