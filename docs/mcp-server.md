@@ -47,20 +47,7 @@ The server auto-detects the project from Claude Code's working directory - no ne
 For one-off builds where you don't have a build tool running, the MCP server can run it itself. It auto-detects the project type from `mkdocs.yml` or `conf.py`:
 
 ```bash
-docs-output-filter --mcp --project-dir /path/to/project
-```
-
-Or add to Claude Code config:
-
-```json
-{
-  "mcpServers": {
-    "docs-output-filter": {
-      "command": "docs-output-filter",
-      "args": ["--mcp", "--project-dir", "."]
-    }
-  }
-}
+claude mcp add --transport stdio docs-output-filter -- docs-output-filter --mcp --project-dir .
 ```
 
 ### Pipe Mode

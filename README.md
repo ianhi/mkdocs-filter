@@ -154,22 +154,10 @@ Enable AI code assistants to access build issues:
 
 ```bash
 # Terminal 1: Run build tool with state sharing
-mkdocs serve --livereload 2>&1 | docs-output-filter --share-state
+docs-output-filter --share-state -- mkdocs serve --livereload
 
-# Terminal 2: AI assistant connects via MCP
-docs-output-filter --mcp --watch
-```
-
-Add to Claude Code's MCP config (`.claude/settings.local.json`):
-```json
-{
-  "mcpServers": {
-    "docs-output-filter": {
-      "command": "docs-output-filter",
-      "args": ["--mcp", "--watch"]
-    }
-  }
-}
+# Terminal 2: Add MCP server to Claude Code
+claude mcp add --scope user --transport stdio docs-output-filter -- docs-output-filter --mcp --watch
 ```
 
 ## Documentation
