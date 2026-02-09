@@ -29,8 +29,7 @@ from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp.types import TextContent, Tool
 
-from docs_output_filter.backends import Backend, BuildTool, detect_backend, get_backend
-from docs_output_filter.backends.mkdocs import MkDocsBackend
+from docs_output_filter.backends import BuildTool, detect_backend_from_lines
 from docs_output_filter.state import (
     find_project_root,
     get_state_file_path,
@@ -42,6 +41,7 @@ from docs_output_filter.types import (
     InfoMessage,
     Issue,
     Level,
+    deduplicate_issues,
     group_info_messages,
 )
 
@@ -93,11 +93,13 @@ class DocsFilterServer:
         """Set up MCP tool handlers."""
 
         @self._server.list_tools()
-        async def list_tools() -> list[Tool]:
+        async def list_tools() -> list[Tool]:  # pragma: no cover - async MCP protocol wrapper
             return self._list_tools()
 
         @self._server.call_tool()
-        async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
+        async def call_tool(
+            name: str, arguments: dict[str, Any]
+        ) -> list[TextContent]:  # pragma: no cover - async MCP protocol wrapper
             return self._call_tool(name, arguments)
 
     def _list_tools(self) -> list[Tool]:
@@ -494,26 +496,10 @@ class DocsFilterServer:
             ]
 
         lines = content.splitlines()
-
-        # Auto-detect backend
-        backend: Backend | None = None
-        for line in lines:
-            backend = detect_backend(line)
-            if backend is not None:
-                break
-        if backend is None:
-            backend = MkDocsBackend()
+        backend = detect_backend_from_lines(lines)
 
         all_issues = backend.parse_issues(lines)
-
-        # Deduplicate
-        seen: set[tuple[Level, str]] = set()
-        unique_issues: list[Issue] = []
-        for issue in all_issues:
-            key = (issue.level, issue.message[:100])
-            if key not in seen:
-                seen.add(key)
-                unique_issues.append(issue)
+        unique_issues = deduplicate_issues(all_issues)
 
         info_messages = backend.parse_info_messages(lines)
         build_info = backend.extract_build_info(lines)
@@ -558,27 +544,10 @@ class DocsFilterServer:
         lines = output.splitlines()
         self.raw_output = lines
 
-        # Auto-detect backend
-        backend: Backend | None = None
-        for line in lines:
-            backend = detect_backend(line)
-            if backend is not None:
-                break
-        if backend is None:
-            backend = get_backend(self._project_type)
+        backend = detect_backend_from_lines(lines, fallback_tool=self._project_type)
 
         all_issues = backend.parse_issues(lines)
-
-        # Deduplicate
-        seen: set[tuple[Level, str]] = set()
-        unique_issues: list[Issue] = []
-        for issue in all_issues:
-            key = (issue.level, issue.message[:100])
-            if key not in seen:
-                seen.add(key)
-                unique_issues.append(issue)
-
-        self.issues = unique_issues
+        self.issues = deduplicate_issues(all_issues)
         self.build_info = backend.extract_build_info(lines)
 
     def _run_build(self, verbose: bool = False) -> tuple[list[str], int]:
@@ -662,7 +631,7 @@ class DocsFilterServer:
             result["build_time"] = self.build_info.build_time
         return json.dumps(result, indent=2)
 
-    async def run(self) -> None:
+    async def run(self) -> None:  # pragma: no cover - MCP stdio server runner
         """Run the MCP server."""
         async with stdio_server() as (read_stream, write_stream):
             await self._server.run(
@@ -779,56 +748,12 @@ Examples:
     )
     args = parser.parse_args()
 
-    mode_count = sum([bool(args.project_dir and not args.watch), args.pipe, args.watch])
-    if mode_count == 0:
-        print(
-            "Error: Specify one of --watch, --project-dir, or --pipe",
-            file=sys.stderr,
-        )
-        return 1
-
-    if mode_count > 1 and not (args.watch and args.project_dir):
-        print(
-            "Error: Cannot combine --pipe with other modes",
-            file=sys.stderr,
-        )
-        return 1
-
-    project_path = None
-    if args.project_dir:
-        project_path = Path(args.project_dir)
-        if not project_path.exists():
-            print(f"Error: Project directory does not exist: {args.project_dir}", file=sys.stderr)
-            return 1
-        if not (project_path / "mkdocs.yml").exists() and not (project_path / "conf.py").exists():
-            print(
-                f"Error: No mkdocs.yml or conf.py found in {args.project_dir}",
-                file=sys.stderr,
-            )
-            return 1
-
-    server = DocsFilterServer(
-        project_dir=project_path,
+    return run_mcp_server(
+        project_dir=args.project_dir,
         pipe_mode=args.pipe,
         watch_mode=args.watch,
+        initial_build=args.initial_build,
     )
-
-    if args.pipe:
-        lines = []
-        for line in sys.stdin:
-            lines.append(line.rstrip())
-        server._parse_output("\n".join(lines))
-    elif args.watch:
-        server._refresh_from_state_file()
-    elif args.initial_build and project_path:
-        lines, _ = server._run_build()
-        server._parse_output("\n".join(lines))
-
-    import asyncio
-
-    asyncio.run(server.run())
-
-    return 0
 
 
 if __name__ == "__main__":

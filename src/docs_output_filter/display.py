@@ -119,19 +119,18 @@ def print_issue(console: Console, issue: Issue, verbose: bool = False) -> None:
             error_lines: list[str] = []
             for line in reversed(output_lines):
                 stripped = line.strip()
-                if stripped:
-                    if re.match(r"^(INFO|DEBUG|WARNING|ERROR)\s+-", stripped):
-                        continue
+                if re.match(r"^(INFO|DEBUG|WARNING|ERROR)\s+-", stripped):
+                    continue
 
-                    error_lines.insert(0, stripped)
-                    if (
-                        re.match(r"^[A-Z][a-zA-Z]*Error:", stripped)
-                        or re.match(r"^[A-Z][a-zA-Z]*Exception:", stripped)
-                        or re.match(r"^[A-Z][a-zA-Z]*Warning:", stripped)
-                    ):
-                        break
-                    if len(error_lines) >= 3:
-                        break
+                error_lines.insert(0, stripped)
+                if (
+                    re.match(r"^[A-Z][a-zA-Z]*Error:", stripped)
+                    or re.match(r"^[A-Z][a-zA-Z]*Exception:", stripped)
+                    or re.match(r"^[A-Z][a-zA-Z]*Warning:", stripped)
+                ):
+                    break
+                if len(error_lines) >= 3:
+                    break
 
             if error_lines:
                 error_summary = "\n".join(error_lines)
@@ -302,7 +301,7 @@ def _get_upstream_command() -> str | None:
     return None
 
 
-def _build_stderr_hint() -> str:
+def build_stderr_hint() -> str:
     """Build the hint string suggesting 2>&1, using the actual upstream command if detectable."""
     upstream = _get_upstream_command()
     if upstream:
@@ -379,5 +378,5 @@ def print_summary(
             f"[yellow]  {missing} warning(s) may have gone to stderr. "
             "Try [bold]2>&1 |[/bold] to capture all output:[/yellow]"
         )
-        suggested = _build_stderr_hint()
+        suggested = build_stderr_hint()
         console.print(f"[dim]  {suggested}[/dim]")

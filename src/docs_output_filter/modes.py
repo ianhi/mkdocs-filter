@@ -27,13 +27,18 @@ from queue import Empty, Queue
 
 from rich.console import Console
 
-from docs_output_filter.backends import Backend, BuildTool, detect_backend, get_backend
+from docs_output_filter.backends import (
+    Backend,
+    BuildTool,
+    detect_backend_from_lines,
+    get_backend,
+)
 from docs_output_filter.backends.mkdocs import (
     detect_chunk_boundary as mkdocs_detect_chunk_boundary,
 )
 from docs_output_filter.display import (
     DisplayMode,
-    _build_stderr_hint,
+    build_stderr_hint,
     print_info_groups,
     print_issue,
     print_summary,
@@ -46,6 +51,7 @@ from docs_output_filter.types import (
     ChunkBoundary,
     Issue,
     Level,
+    deduplicate_issues,
     group_info_messages,
 )
 
@@ -69,19 +75,10 @@ def run_batch_mode(console: Console, args: argparse.Namespace, show_spinner: boo
 
     # Get backend
     tool = BuildTool(getattr(args, "tool", "auto"))
-    backend: Backend | None = None
     if tool != BuildTool.AUTO:
-        backend = get_backend(tool)
+        backend: Backend = get_backend(tool)
     else:
-        # Auto-detect from content
-        for line in lines:
-            backend = detect_backend(line)
-            if backend is not None:
-                break
-        if backend is None:
-            from docs_output_filter.backends.mkdocs import MkDocsBackend
-
-            backend = MkDocsBackend()
+        backend = detect_backend_from_lines(lines)
 
     # Extract build info
     build_info = backend.extract_build_info(lines)
@@ -94,13 +91,7 @@ def run_batch_mode(console: Console, args: argparse.Namespace, show_spinner: boo
         issues = [i for i in issues if i.level == Level.ERROR]
 
     # Deduplicate
-    seen: set[tuple[Level, str]] = set()
-    unique_issues: list[Issue] = []
-    for issue in issues:
-        key = (issue.level, issue.message[:100])
-        if key not in seen:
-            seen.add(key)
-            unique_issues.append(issue)
+    unique_issues = deduplicate_issues(issues)
 
     # Parse INFO messages
     info_messages = backend.parse_info_messages(lines)
@@ -190,9 +181,9 @@ def run_streaming_mode(console: Console, args: argparse.Namespace) -> int:
 
     def print_info_groups_inline() -> None:
         if processor.all_info_messages:
+            # group_info_messages always returns non-empty when messages exist
             info_groups = group_info_messages(processor.all_info_messages)
-            if info_groups:
-                print_info_groups(console, info_groups, verbose=args.verbose)
+            print_info_groups(console, info_groups, verbose=args.verbose)
 
     stderr_hint_printed = False
 
@@ -214,7 +205,7 @@ def run_streaming_mode(console: Console, args: argparse.Namespace) -> int:
                 f"[yellow]  {missing} warning(s) may have gone to stderr. "
                 "Try [bold]2>&1 |[/bold] to capture all output:[/yellow]"
             )
-            console.print(f"[dim]  {_build_stderr_hint()}[/dim]")
+            console.print(f"[dim]  {build_stderr_hint()}[/dim]")
             stderr_hint_printed = True
 
     def _detect_boundary_for_display(line: str) -> ChunkBoundary:
@@ -222,6 +213,28 @@ def run_streaming_mode(console: Console, args: argparse.Namespace) -> int:
         if processor.backend is not None:
             return processor.backend.detect_chunk_boundary(line, None)
         return mkdocs_detect_chunk_boundary(line, None)
+
+    def _handle_boundary(boundary: ChunkBoundary) -> None:
+        """Handle BUILD_COMPLETE/SERVER_STARTED/REBUILD_STARTED boundaries."""
+        nonlocal build_output_shown, issues_printed
+        if boundary in (ChunkBoundary.BUILD_COMPLETE, ChunkBoundary.SERVER_STARTED):
+            if not build_output_shown:
+                build_output_shown = True
+                print_build_time_inline()
+                print_info_groups_inline()
+                print_pending_issues()
+                print_stderr_hint_inline()
+                print_server_url_inline()
+                if write_state:
+                    state_path = get_state_file_path()
+                    if state_path:
+                        console.print(f"[dim]💡 MCP: State shared to {state_path.resolve()}[/dim]")
+                    console.print()
+            elif boundary == ChunkBoundary.SERVER_STARTED:
+                print_server_url_inline()
+        elif boundary == ChunkBoundary.REBUILD_STARTED:
+            issues_printed = 0
+            build_output_shown = False
 
     if spinner_active:
         with Live(console=console, refresh_per_second=10, transient=True) as live:
@@ -244,32 +257,10 @@ def run_streaming_mode(console: Console, args: argparse.Namespace) -> int:
                     spinner = Spinner("dots", text=spinner_text, style="cyan")
                     live.update(spinner)
 
-                if boundary in (ChunkBoundary.BUILD_COMPLETE, ChunkBoundary.SERVER_STARTED):
-                    if not build_output_shown:
-                        build_output_shown = True
-                        live.stop()
-                        print_build_time_inline()
-                        print_info_groups_inline()
-                        print_pending_issues()
-                        print_stderr_hint_inline()
-                        print_server_url_inline()
-                        if write_state:
-                            state_path = get_state_file_path()
-                            if state_path:
-                                console.print(
-                                    f"[dim]💡 MCP: State shared to {state_path.resolve()}[/dim]"
-                                )
-                            console.print()
-                        live.start()
-                    elif boundary == ChunkBoundary.SERVER_STARTED:
-                        # Server URL arrived after build output was already shown
-                        live.stop()
-                        print_server_url_inline()
-                        live.start()
-
-                elif boundary == ChunkBoundary.REBUILD_STARTED:
-                    issues_printed = 0
-                    build_output_shown = False
+                if boundary != ChunkBoundary.NONE:
+                    live.stop()
+                    _handle_boundary(boundary)
+                    live.start()
     else:
         while True:
             line = sys.stdin.readline()
@@ -277,29 +268,7 @@ def run_streaming_mode(console: Console, args: argparse.Namespace) -> int:
                 break
             boundary = _detect_boundary_for_display(line)
             processor.process_line(line)
-
-            if boundary in (ChunkBoundary.BUILD_COMPLETE, ChunkBoundary.SERVER_STARTED):
-                if not build_output_shown:
-                    build_output_shown = True
-                    print_build_time_inline()
-                    print_info_groups_inline()
-                    print_pending_issues()
-                    print_stderr_hint_inline()
-                    print_server_url_inline()
-                    if write_state:
-                        state_path = get_state_file_path()
-                        if state_path:
-                            console.print(
-                                f"[dim]💡 MCP: State shared to {state_path.resolve()}[/dim]"
-                            )
-                        console.print()
-                elif boundary == ChunkBoundary.SERVER_STARTED:
-                    # Server URL arrived after build output was already shown
-                    print_server_url_inline()
-
-            elif boundary == ChunkBoundary.REBUILD_STARTED:
-                issues_printed = 0
-                build_output_shown = False
+            _handle_boundary(boundary)
 
     # Finalize and get results
     all_issues, build_info = processor.finalize()
@@ -384,7 +353,7 @@ def run_interactive_mode(console: Console, args: argparse.Namespace) -> int:
     def stdin_reader() -> None:
         try:
             while True:
-                if should_quit.is_set():
+                if should_quit.is_set():  # pragma: no cover - thread race between readline calls
                     break
                 line = sys.stdin.readline()
                 if not line:
@@ -418,7 +387,7 @@ def run_interactive_mode(console: Console, args: argparse.Namespace) -> int:
 
         issues_printed = 0
 
-        while not should_quit.is_set():
+        while True:
             key = get_key_nonblocking(tty_fd)
             if key:
                 if key.lower() == "q":
@@ -505,18 +474,10 @@ def run_url_mode(console: Console, args: argparse.Namespace) -> int:
 
     # Auto-detect or use specified backend
     tool = BuildTool(getattr(args, "tool", "auto"))
-    backend: Backend | None = None
     if tool != BuildTool.AUTO:
-        backend = get_backend(tool)
+        backend: Backend = get_backend(tool)
     else:
-        for line in lines:
-            backend = detect_backend(line)
-            if backend is not None:
-                break
-        if backend is None:
-            from docs_output_filter.backends.mkdocs import MkDocsBackend
-
-            backend = MkDocsBackend()
+        backend = detect_backend_from_lines(lines)
 
     all_issues = backend.parse_issues(lines)
 
