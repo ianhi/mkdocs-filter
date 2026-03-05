@@ -1164,6 +1164,52 @@ class TestPrintIssueAdditionalGaps:
         # Should not show "Error Output" panel since all lines were filtered
         assert "Error Output" not in output
 
+    def test_output_with_ansi_escapes_does_not_hang(self) -> None:
+        """Output containing ANSI escape codes should render without hanging.
+
+        Remote build logs (e.g., ReadTheDocs with myst-nb/IPython) often contain
+        colorized tracebacks. Rich can hang rendering these in Panels.
+        """
+        console = make_console()
+        # Simulate colorized traceback like IPython/myst-nb produces
+        output_text = (
+            "\x1b[36mFile \x1b[39m\x1b[32mpandas/_libs/tslibs/timestamps.pyx:607\x1b[39m, in\n"
+            "\x1b[36mpandas._libs.tslibs.timestamps._Timestamp.__sub__\x1b[39m\x1b[34m()\x1b[39m\n"
+            "\x1b[31mTypeError\x1b[39m: Addition/subtraction of integers not supported.\n"
+            "Instead of adding/subtracting `n`, use `n * obj.freq`"
+        )
+        issue = Issue(
+            level=Level.ERROR,
+            source="sphinx",
+            message="CellExecutionError",
+            output=output_text,
+        )
+        # This should complete quickly, not hang
+        print_issue(console, issue, verbose=False)
+        output = get_output(console)
+
+        assert "Error Output" in output
+        assert "TypeError" in output
+        # ANSI codes should be stripped
+        assert "\x1b[" not in output
+
+    def test_output_verbose_with_ansi_escapes_stripped(self) -> None:
+        """Verbose output with ANSI escapes should also be stripped."""
+        console = make_console()
+        output_text = "\x1b[31mTypeError\x1b[39m: bad value"
+        issue = Issue(
+            level=Level.ERROR,
+            source="sphinx",
+            message="CellExecutionError",
+            output=output_text,
+        )
+        print_issue(console, issue, verbose=True)
+        output = get_output(console)
+
+        assert "Traceback" in output
+        assert "TypeError" in output
+        assert "\x1b[" not in output
+
     def test_info_groups_description_empty(self) -> None:
         """print_info_groups with category that has empty description (line 171->174)."""
         # We need to test the branch where description is empty/falsy.

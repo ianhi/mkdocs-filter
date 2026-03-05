@@ -107,14 +107,17 @@ def print_issue(console: Console, issue: Issue, verbose: bool = False) -> None:
 
     # Show output/traceback
     if issue.output:
-        output_lines = [line for line in issue.output.split("\n") if line.strip()]
+        # Strip ANSI escape codes — remote build logs (e.g., ReadTheDocs) often
+        # contain colorized tracebacks that cause Rich to hang during rendering
+        clean_output = re.sub(r"\x1b\[[0-9;]*m", "", issue.output)
+        output_lines = [line for line in clean_output.split("\n") if line.strip()]
 
         if verbose:
             if len(output_lines) > 15:
                 output_text = "\n".join(output_lines[-15:])
                 output_text = f"... ({len(output_lines) - 15} lines omitted)\n" + output_text
             else:
-                output_text = issue.output
+                output_text = clean_output
             output_text = dedent_code(output_text)
             console.print(Panel(output_text, title="Traceback", border_style="red", expand=False))
         else:
