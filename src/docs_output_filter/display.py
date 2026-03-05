@@ -107,9 +107,7 @@ def print_issue(console: Console, issue: Issue, verbose: bool = False) -> None:
 
     # Show output/traceback
     if issue.output:
-        # Strip ANSI escape codes — remote build logs (e.g., ReadTheDocs) often
-        # contain colorized tracebacks that cause Rich to hang during rendering
-        clean_output = re.sub(r"\x1b\[[0-9;]*m", "", issue.output)
+        clean_output = _strip_ansi(issue.output)
         output_lines = [line for line in clean_output.split("\n") if line.strip()]
 
         if verbose:
@@ -121,24 +119,8 @@ def print_issue(console: Console, issue: Issue, verbose: bool = False) -> None:
             output_text = dedent_code(output_text)
             console.print(Panel(output_text, title="Traceback", border_style="red", expand=False))
         else:
-            error_lines: list[str] = []
-            for line in reversed(output_lines):
-                stripped = line.strip()
-                if re.match(r"^(INFO|DEBUG|WARNING|ERROR)\s+-", stripped):
-                    continue
-
-                error_lines.insert(0, stripped)
-                if (
-                    re.match(r"^[A-Z][a-zA-Z]*Error:", stripped)
-                    or re.match(r"^[A-Z][a-zA-Z]*Exception:", stripped)
-                    or re.match(r"^[A-Z][a-zA-Z]*Warning:", stripped)
-                ):
-                    break
-                if len(error_lines) >= 3:
-                    break
-
-            if error_lines:
-                error_summary = "\n".join(error_lines)
+            error_summary = _condense_traceback(clean_output)
+            if error_summary:
                 console.print(
                     Panel(
                         error_summary,
@@ -387,12 +369,41 @@ def print_summary(
         console.print(f"[dim]  {suggested}[/dim]")
 
 
+def _strip_ansi(text: str) -> str:
+    """Strip ANSI escape codes from text."""
+    return re.sub(r"\x1b\[[0-9;]*m", "", text)
+
+
+def _condense_traceback(output: str) -> str:
+    """Extract just the error line(s) from a traceback, skipping noise.
+
+    Returns up to 3 lines from the bottom, stopping early if an
+    Error/Exception/Warning line is found.
+    """
+    lines = [line for line in output.split("\n") if line.strip()]
+    error_lines: list[str] = []
+    for line in reversed(lines):
+        stripped = line.strip()
+        if re.match(r"^(INFO|DEBUG|WARNING|ERROR)\s+-", stripped):
+            continue
+        error_lines.insert(0, stripped)
+        if (
+            re.match(r"^[A-Z][a-zA-Z]*Error:", stripped)
+            or re.match(r"^[A-Z][a-zA-Z]*Exception:", stripped)
+            or re.match(r"^[A-Z][a-zA-Z]*Warning:", stripped)
+        ):
+            break
+        if len(error_lines) >= 3:
+            break
+    return "\n".join(error_lines)
+
+
 def _issue_to_dict(issue: Issue, verbose: bool = False) -> dict[str, Any]:
     """Convert an Issue to a JSON-serializable dict."""
     result: dict[str, Any] = {
         "level": issue.level.value,
         "source": issue.source,
-        "message": issue.message,
+        "message": _strip_ansi(issue.message),
     }
     if issue.file:
         result["file"] = issue.file
@@ -401,9 +412,13 @@ def _issue_to_dict(issue: Issue, verbose: bool = False) -> dict[str, Any]:
     if issue.warning_code:
         result["warning_code"] = issue.warning_code
     if issue.code:
-        result["code"] = issue.code
+        result["code"] = _strip_ansi(issue.code)
     if issue.output:
-        result["output"] = issue.output
+        clean = _strip_ansi(issue.output)
+        if verbose:
+            result["output"] = clean
+        else:
+            result["output"] = _condense_traceback(clean)
     return result
 
 

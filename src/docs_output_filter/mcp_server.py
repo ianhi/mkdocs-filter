@@ -598,11 +598,13 @@ class DocsFilterServer:
 
     def _issue_to_dict(self, issue: Issue, verbose: bool = False) -> dict[str, Any]:
         """Convert an Issue to a JSON-serializable dict."""
+        from docs_output_filter.display import _condense_traceback, _strip_ansi
+
         result: dict[str, Any] = {
             "id": self._get_issue_id(issue),
             "level": issue.level.value,
             "source": issue.source,
-            "message": issue.message,
+            "message": _strip_ansi(issue.message),
         }
 
         if issue.file:
@@ -614,9 +616,12 @@ class DocsFilterServer:
 
         if verbose:
             if issue.code:
-                result["code"] = issue.code
+                result["code"] = _strip_ansi(issue.code)
             if issue.output:
-                result["traceback"] = issue.output
+                result["traceback"] = _strip_ansi(issue.output)
+        else:
+            if issue.output:
+                result["traceback"] = _condense_traceback(_strip_ansi(issue.output))
 
         return result
 
